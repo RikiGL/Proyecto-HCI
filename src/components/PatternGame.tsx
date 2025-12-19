@@ -1,13 +1,13 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { GameButton } from "./GameButton";
 import { Button } from "@/components/ui/button";
-import { Play, RotateCcw, Volume2, VolumeX } from "lucide-react";
+import { Play, RotateCcw, Volume2, VolumeX, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 type Color = "red" | "blue" | "green" | "yellow" | "purple";
 const COLORS: Color[] = ["red", "blue", "green", "yellow", "purple"];
 
-type GameState = "idle" | "showing" | "playing" | "success" | "failed";
+type GameState = "idle" | "showing" | "playing" | "success" | "failed" | "loading";
 
 const LEVEL_CONFIG = {
   1: { patternLength: 2, speed: 800, name: "Fácil" },
@@ -17,6 +17,22 @@ const LEVEL_CONFIG = {
   5: { patternLength: 5, speed: 350, name: "Maestro" },
 };
 
+const ML_API_URL = "https://supertrivial-caducean-chiquita.ngrok-free.dev/predecir";
+
+type MLAction = "SUBIR" | "BAJAR" | "MANTENER";
+
+interface MLRequest {
+  nivel: number;
+  aciertos: number;
+  errores: number;
+  tiempo: number;
+  racha: number;
+}
+
+interface MLResponse {
+  accion: MLAction;
+}
+
 export const PatternGame = () => {
   const [level, setLevel] = useState(1);
   const [pattern, setPattern] = useState<number[]>([]);
@@ -25,6 +41,11 @@ export const PatternGame = () => {
   const [gameState, setGameState] = useState<GameState>("idle");
   const [score, setScore] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  
+  // ML tracking state
+  const [streak, setStreak] = useState(0);
+  const [roundErrors, setRoundErrors] = useState(0);
+  const roundStartTime = useRef<number>(0);
 
   const playSound = useCallback((frequency: number) => {
     if (!soundEnabled) return;
@@ -56,9 +77,86 @@ export const PatternGame = () => {
     return newPattern;
   }, [level]);
 
-  const showPattern = useCallback(async (patternToShow: number[]) => {
+  const callMLApi = async (data: MLRequest): Promise<MLAction> => {
+    try {
+      const response = await fetch(ML_API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+      });
+      
+      if (!response.ok) {
+        throw new Error("API response not ok");
+      }
+      
+      const result: MLResponse = await response.json();
+      return result.accion;
+    } catch (error) {
+      console.error("ML API error, using fallback logic:", error);
+      // Fallback logic: use internal rules
+      if (data.aciertos === data.nivel + 1 && data.errores === 0) {
+        return "SUBIR";
+      } else if (data.errores >= 2 || data.racha <= -3) {
+        return "BAJAR";
+      }
+      return "MANTENER";
+    }
+  };
+
+  const handleRoundComplete = async (success: boolean, correctCount: number, errorCount: number) => {
+    const timeElapsed = Math.round((Date.now() - roundStartTime.current) / 1000);
+    const newStreak = success ? (streak >= 0 ? streak + 1 : 1) : (streak <= 0 ? streak - 1 : -1);
+    setStreak(newStreak);
+    
+    setGameState("loading");
+    
+    const mlData: MLRequest = {
+      nivel: level,
+      aciertos: correctCount,
+      errores: errorCount,
+      tiempo: timeElapsed,
+      racha: newStreak,
+    };
+    
+    console.log("Sending to ML API:", mlData);
+    
+    const action = await callMLApi(mlData);
+    console.log("ML API response:", action);
+    
+    let newLevel = level;
+    
+    if (action === "SUBIR" && level < 5) {
+      newLevel = level + 1;
+      setLevel(newLevel);
+      toast.success(`🚀 ¡Subiste al nivel ${newLevel}! ¡Excelente!`);
+    } else if (action === "BAJAR" && level > 1) {
+      newLevel = level - 1;
+      setLevel(newLevel);
+      toast.info(`💪 Bajaste al nivel ${newLevel}. ¡Tú puedes!`);
+    } else {
+      toast(`🔄 Continuando en nivel ${level}`);
+    }
+    
+    // Start next round with potentially new level
+    setTimeout(() => {
+      const config = LEVEL_CONFIG[newLevel as keyof typeof LEVEL_CONFIG];
+      const newPattern: number[] = [];
+      for (let i = 0; i < config.patternLength; i++) {
+        newPattern.push(Math.floor(Math.random() * 5));
+      }
+      setPattern(newPattern);
+      setPlayerPattern([]);
+      setRoundErrors(0);
+      showPattern(newPattern, newLevel);
+    }, 1000);
+  };
+
+  const showPattern = useCallback(async (patternToShow: number[], lvl?: number) => {
     setGameState("showing");
-    const config = LEVEL_CONFIG[level as keyof typeof LEVEL_CONFIG];
+    const currentLevel = lvl ?? level;
+    const config = LEVEL_CONFIG[currentLevel as keyof typeof LEVEL_CONFIG];
     
     for (let i = 0; i < patternToShow.length; i++) {
       await new Promise(resolve => setTimeout(resolve, config.speed));
@@ -69,6 +167,7 @@ export const PatternGame = () => {
     }
     
     await new Promise(resolve => setTimeout(resolve, 300));
+    roundStartTime.current = Date.now();
     setGameState("playing");
   }, [level, playSound]);
 
@@ -77,6 +176,8 @@ export const PatternGame = () => {
     setPattern(newPattern);
     setPlayerPattern([]);
     setScore(0);
+    setStreak(0);
+    setRoundErrors(0);
     showPattern(newPattern);
   }, [generatePattern, showPattern]);
 
@@ -93,9 +194,14 @@ export const PatternGame = () => {
     // Check if correct
     const currentIndex = newPlayerPattern.length - 1;
     if (pattern[currentIndex] !== index) {
+      const newErrors = roundErrors + 1;
+      setRoundErrors(newErrors);
       setGameState("failed");
       playSound(150);
-      toast.error("¡Patrón incorrecto! Intenta de nuevo.");
+      toast.error("¡Patrón incorrecto!");
+      
+      // Call ML API with failure data
+      handleRoundComplete(false, currentIndex, newErrors);
       return;
     }
     
@@ -104,20 +210,11 @@ export const PatternGame = () => {
       setGameState("success");
       const points = level * 100;
       setScore(prev => prev + points);
-      toast.success(`¡Correcto! +${points} puntos`);
       
-      // Auto advance or restart
-      setTimeout(() => {
-        if (level < 5) {
-          setLevel(prev => prev + 1);
-        }
-        const nextPattern = generatePattern();
-        setPattern(nextPattern);
-        setPlayerPattern([]);
-        showPattern(nextPattern);
-      }, 1500);
+      // Call ML API with success data
+      handleRoundComplete(true, pattern.length, roundErrors);
     }
-  }, [gameState, pattern, playerPattern, level, playSound, generatePattern, showPattern]);
+  }, [gameState, pattern, playerPattern, level, playSound, roundErrors, handleRoundComplete]);
 
   const resetGame = () => {
     setLevel(1);
@@ -126,10 +223,12 @@ export const PatternGame = () => {
     setActiveButton(null);
     setGameState("idle");
     setScore(0);
+    setStreak(0);
+    setRoundErrors(0);
   };
 
   const selectLevel = (newLevel: number) => {
-    if (gameState !== "idle") return;
+    if (gameState !== "idle" && gameState !== "loading") return;
     setLevel(newLevel);
   };
 
@@ -187,7 +286,7 @@ export const PatternGame = () => {
         </div>
 
         {/* Game status */}
-        <div className="h-8 flex items-center justify-center">
+        <div className="h-8 flex items-center justify-center gap-2">
           {gameState === "showing" && (
             <p className="text-accent animate-pulse-glow font-pixel text-xs">OBSERVA...</p>
           )}
@@ -200,7 +299,20 @@ export const PatternGame = () => {
           {gameState === "failed" && (
             <p className="text-destructive font-pixel text-xs animate-shake">¡ERROR!</p>
           )}
+          {gameState === "loading" && (
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-primary" />
+              <p className="text-muted-foreground font-pixel text-xs">ANALIZANDO...</p>
+            </div>
+          )}
         </div>
+
+        {/* Streak indicator */}
+        {(gameState !== "idle") && (
+          <div className="text-center text-xs text-muted-foreground">
+            Racha: <span className={streak >= 0 ? "text-green-400" : "text-destructive"}>{streak > 0 ? `+${streak}` : streak}</span>
+          </div>
+        )}
 
         {/* Game buttons */}
         <div className="flex flex-wrap justify-center gap-4 p-6 bg-card/50 rounded-3xl backdrop-blur-sm border border-border">
