@@ -17,7 +17,7 @@ const LEVEL_CONFIG = {
   5: { patternLength: 5, speed: 350, name: "Maestro" },
 };
 
-const ML_API_URL = "https://supertrivial-caducean-chiquita.ngrok-free.dev/predecir";
+const ML_API_URL = "http://localhost:8000/predecir";
 
 type MLAction = "SUBIR" | "BAJAR" | "MANTENER";
 
