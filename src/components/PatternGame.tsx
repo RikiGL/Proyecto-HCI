@@ -1,8 +1,13 @@
 import { useState, useCallback, useRef } from "react";
 import { GameButton } from "./GameButton";
 import { Button } from "@/components/ui/button";
-import { Play, RotateCcw, Volume2, VolumeX, Loader2 } from "lucide-react";
+import { Play, RotateCcw, Volume2, VolumeX, Loader2, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+
+interface PatternGameProps {
+  initialLevel?: number;
+  onBack?: () => void;
+}
 
 type Color = "red" | "blue" | "green" | "yellow" | "purple";
 const COLORS: Color[] = ["red", "blue", "green", "yellow", "purple"];
@@ -33,8 +38,8 @@ interface MLResponse {
   accion: MLAction;
 }
 
-export const PatternGame = () => {
-  const [level, setLevel] = useState(1);
+export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
+  const [level, setLevel] = useState(initialLevel);
   const [pattern, setPattern] = useState<number[]>([]);
   const [playerPattern, setPlayerPattern] = useState<number[]>([]);
   const [activeButton, setActiveButton] = useState<number | null>(null);
@@ -217,7 +222,7 @@ export const PatternGame = () => {
   }, [gameState, pattern, playerPattern, level, playSound, roundErrors, handleRoundComplete]);
 
   const resetGame = () => {
-    setLevel(1);
+    setLevel(initialLevel);
     setPattern([]);
     setPlayerPattern([]);
     setActiveButton(null);
@@ -240,6 +245,19 @@ export const PatternGame = () => {
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/10 rounded-full blur-3xl" />
       
       <div className="relative z-10 flex flex-col items-center gap-8 max-w-lg w-full">
+        {/* Back button */}
+        {onBack && (
+          <Button
+            onClick={onBack}
+            variant="ghost"
+            size="sm"
+            className="absolute top-4 left-4 gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Volver
+          </Button>
+        )}
+
         {/* Header */}
         <div className="text-center space-y-2">
           <h1 className="text-4xl md:text-5xl font-bold text-glow tracking-wider">
@@ -258,24 +276,6 @@ export const PatternGame = () => {
             <p className="text-xs text-muted-foreground uppercase tracking-wider">Nivel</p>
             <p className="text-2xl font-bold text-primary">{level}</p>
           </div>
-        </div>
-
-        {/* Level selector */}
-        <div className="flex gap-2">
-          {[1, 2, 3, 4, 5].map((lvl) => (
-            <button
-              key={lvl}
-              onClick={() => selectLevel(lvl)}
-              disabled={gameState !== "idle"}
-              className={`w-10 h-10 rounded-lg font-bold transition-all ${
-                level === lvl
-                  ? "bg-primary text-primary-foreground scale-110"
-                  : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-              } ${gameState !== "idle" ? "opacity-50 cursor-not-allowed" : ""}`}
-            >
-              {lvl}
-            </button>
-          ))}
         </div>
 
         {/* Level info */}
