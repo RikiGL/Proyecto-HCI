@@ -259,29 +259,31 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
         )}
 
         {/* Header */}
-        <div className="text-center space-y-2">
+        <div className="text-center space-y-3">
           <h1 className="text-4xl md:text-5xl font-bold text-glow tracking-wider">
             PATRONES
           </h1>
-          <p className="text-muted-foreground text-sm">Memoriza y repite la secuencia</p>
+          <p className="text-base text-foreground/70 tracking-wide leading-relaxed">
+            Memoriza y repite la secuencia
+          </p>
         </div>
 
         {/* Score and Level */}
-        <div className="flex gap-8 items-center">
-          <div className="text-center">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">Puntos</p>
+        <div className="flex gap-10 items-center">
+          <div className="text-center space-y-1">
+            <p className="text-sm text-foreground/60 uppercase tracking-widest">Puntos</p>
             <p className="text-2xl font-bold text-glow-accent text-accent">{score}</p>
           </div>
-          <div className="text-center">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">Nivel</p>
+          <div className="text-center space-y-1">
+            <p className="text-sm text-foreground/60 uppercase tracking-widest">Nivel</p>
             <p className="text-2xl font-bold text-primary">{level}</p>
           </div>
         </div>
 
         {/* Level info */}
         <div className="text-center">
-          <p className="text-sm text-muted-foreground">
-            {LEVEL_CONFIG[level as keyof typeof LEVEL_CONFIG].name} - {LEVEL_CONFIG[level as keyof typeof LEVEL_CONFIG].patternLength} botones
+          <p className="text-base text-foreground/70 tracking-wide leading-relaxed">
+            {LEVEL_CONFIG[level as keyof typeof LEVEL_CONFIG].name} — {LEVEL_CONFIG[level as keyof typeof LEVEL_CONFIG].patternLength} botones
           </p>
         </div>
 
@@ -309,7 +311,7 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
 
         {/* Streak indicator */}
         {(gameState !== "idle") && (
-          <div className="text-center text-xs text-muted-foreground">
+          <div className="text-center text-sm text-foreground/60 tracking-wide">
             Racha: <span className={streak >= 0 ? "text-green-400" : "text-destructive"}>{streak > 0 ? `+${streak}` : streak}</span>
           </div>
         )}
@@ -382,10 +384,16 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
 
         {/* Instructions */}
         {gameState === "idle" && (
-          <div className="text-center text-xs text-muted-foreground max-w-xs space-y-1 mt-4">
-            <p>1. Selecciona el nivel de dificultad</p>
-            <p>2. Observa el patrón de luces</p>
-            <p>3. Repite la secuencia en el mismo orden</p>
+          <div className="text-center max-w-sm space-y-2 mt-6">
+            <p className="text-sm text-foreground/70 tracking-wide leading-relaxed">
+              1. Selecciona el nivel de dificultad
+            </p>
+            <p className="text-sm text-foreground/70 tracking-wide leading-relaxed">
+              2. Observa el patrón de luces
+            </p>
+            <p className="text-sm text-foreground/70 tracking-wide leading-relaxed">
+              3. Repite la secuencia en el mismo orden
+            </p>
           </div>
         )}
       </div>

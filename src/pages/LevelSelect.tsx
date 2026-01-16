@@ -38,21 +38,25 @@ const LevelSelect = () => {
             <Button
               key={level}
               onClick={() => handleLevelSelect(level)}
-              className="h-20 text-lg font-bold bg-card/50 hover:bg-primary/20 border border-border hover:border-primary transition-all duration-300 hover:scale-105 backdrop-blur-sm flex flex-col items-center justify-center gap-1"
+              className="h-24 text-lg font-bold bg-card/50 hover:bg-primary/20 border border-border hover:border-primary transition-all duration-300 hover:scale-105 backdrop-blur-sm flex flex-col items-center justify-center gap-2 py-4"
               variant="ghost"
             >
-              <span className="text-2xl text-primary">Nivel {level}</span>
-              <span className="text-xs text-muted-foreground font-normal">
-                {LEVEL_INFO[level as keyof typeof LEVEL_INFO].name} - {LEVEL_INFO[level as keyof typeof LEVEL_INFO].description}
+              <span className="text-2xl text-primary font-bold tracking-wide">Nivel {level}</span>
+              <span className="text-sm text-foreground/70 font-normal tracking-wider leading-relaxed">
+                {LEVEL_INFO[level as keyof typeof LEVEL_INFO].name} — {LEVEL_INFO[level as keyof typeof LEVEL_INFO].description}
               </span>
             </Button>
           ))}
         </div>
 
         {/* Instructions */}
-        <div className="text-center text-xs text-muted-foreground max-w-xs space-y-1 mt-4">
-          <p>Memoriza y repite la secuencia de colores</p>
-          <p>El nivel afecta la velocidad y cantidad de colores</p>
+        <div className="text-center max-w-sm space-y-2 mt-6">
+          <p className="text-sm text-foreground/80 tracking-wide leading-relaxed">
+            Memoriza y repite la secuencia de colores
+          </p>
+          <p className="text-sm text-foreground/60 tracking-wide leading-relaxed">
+            El nivel afecta la velocidad y cantidad de colores
+          </p>
         </div>
       </div>
     </div>
