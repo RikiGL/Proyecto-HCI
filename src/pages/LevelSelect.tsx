@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
 
 const LEVEL_INFO = {
   1: { name: "Fácil", description: "Velocidad lenta, 2 colores" },
@@ -23,6 +24,16 @@ const LevelSelect = () => {
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/10 rounded-full blur-3xl" />
 
+      {/* Back Button */}
+      <Button
+        onClick={() => navigate("/home")}
+        variant="ghost"
+        size="icon"
+        className="absolute top-4 left-4 z-20 hover:bg-primary/10 hover:text-primary transition-all duration-300"
+      >
+        <ArrowLeft className="w-5 h-5" />
+      </Button>
+
       <div className="relative z-10 flex flex-col items-center gap-4 max-w-lg w-full">
         {/* Header */}
         <div className="text-center space-y-1">
@@ -30,6 +41,16 @@ const LevelSelect = () => {
             PATRONES
           </h1>
           <p className="text-lg text-muted-foreground">Selecciona tu Nivel</p>
+        </div>
+
+        {/* Instructions - moved here */}
+        <div className="text-center max-w-sm space-y-1">
+          <p className="text-xs text-foreground/80 tracking-wide leading-relaxed">
+            Memoriza y repite la secuencia de colores
+          </p>
+          <p className="text-xs text-foreground/60 tracking-wide leading-relaxed">
+            El nivel afecta la velocidad y cantidad de colores
+          </p>
         </div>
 
         {/* Level buttons */}
@@ -47,16 +68,6 @@ const LevelSelect = () => {
               </span>
             </Button>
           ))}
-        </div>
-
-        {/* Instructions */}
-        <div className="text-center max-w-sm space-y-1 mt-2">
-          <p className="text-xs text-foreground/80 tracking-wide leading-relaxed">
-            Memoriza y repite la secuencia de colores
-          </p>
-          <p className="text-xs text-foreground/60 tracking-wide leading-relaxed">
-            El nivel afecta la velocidad y cantidad de colores
-          </p>
         </div>
       </div>
     </div>
