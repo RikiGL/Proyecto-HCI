@@ -10,7 +10,7 @@ const Game = () => {
   const validLevel = Math.min(5, Math.max(1, isNaN(initialLevel) ? 1 : initialLevel));
 
   const handleBack = () => {
-    navigate("/");
+    navigate("/levels");
   };
 
   return <PatternGame initialLevel={validLevel} onBack={handleBack} />;

@@ -250,11 +250,10 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
           <Button
             onClick={onBack}
             variant="ghost"
-            size="sm"
-            className="absolute top-4 left-4 gap-2"
+            size="icon"
+            className="absolute top-4 left-4 z-20 hover:bg-primary/10 hover:text-primary transition-all duration-300"
           >
-            <ArrowLeft className="w-4 h-4" />
-            Volver
+            <ArrowLeft className="w-5 h-5" />
           </Button>
         )}
 
