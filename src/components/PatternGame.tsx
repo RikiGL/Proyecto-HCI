@@ -45,6 +45,13 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
   const [activeButton, setActiveButton] = useState<number | null>(null);
   const [gameState, setGameState] = useState<GameState>("idle");
   const [score, setScore] = useState(0);
+  // Estadísticas actuales (por nivel / ronda)
+const [currentHits, setCurrentHits] = useState(0);
+const [currentErrors, setCurrentErrors] = useState(0);
+
+// Estadísticas totales (NO se resetean)
+const [totalHits, setTotalHits] = useState(0);
+const [totalErrors, setTotalErrors] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
   
   // ML tracking state
@@ -178,6 +185,8 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
 
   const startGame = useCallback(() => {
     const newPattern = generatePattern();
+    setCurrentHits(0);
+setCurrentErrors(0);
     setPattern(newPattern);
     setPlayerPattern([]);
     setScore(0);
@@ -204,6 +213,9 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
       setGameState("failed");
       playSound(150);
       toast.error("¡Patrón incorrecto!");
+        setCurrentErrors(prev => prev + 1);
+  setTotalErrors(prev => prev + 1);
+
       
       // Call ML API with failure data
       handleRoundComplete(false, currentIndex, newErrors);
@@ -215,6 +227,9 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
       setGameState("success");
       const points = level * 100;
       setScore(prev => prev + points);
+        setCurrentHits(prev => prev + pattern.length);
+  setTotalHits(prev => prev + pattern.length);
+
       
       // Call ML API with success data
       handleRoundComplete(true, pattern.length, roundErrors);
@@ -238,14 +253,15 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Background effects */}
+    <>
+    {/*<div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 relative overflow-hidden">
+      { Background effects 
       <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-accent/5" />
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/10 rounded-full blur-3xl" />
       
       <div className="relative z-10 flex flex-col items-center gap-8 max-w-lg w-full">
-        {/* Back button */}
+        {/* Back button }
         {onBack && (
           <Button
             onClick={onBack}
@@ -255,9 +271,9 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
-        )}
+        )}}
 
-        {/* Header */}
+        {/* Header }
         <div className="text-center space-y-3">
           <h1 className="text-4xl md:text-5xl font-bold text-glow tracking-wider">
             PATRONES
@@ -267,7 +283,7 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
           </p>
         </div>
 
-        {/* Score and Level */}
+        {/* Score and Level }
         <div className="flex gap-10 items-center">
           <div className="text-center space-y-1">
             <p className="text-sm text-foreground/60 uppercase tracking-widest">Puntos</p>
@@ -279,14 +295,14 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
           </div>
         </div>
 
-        {/* Level info */}
+        {/* Level info }
         <div className="text-center">
           <p className="text-base text-foreground/70 tracking-wide leading-relaxed">
             {LEVEL_CONFIG[level as keyof typeof LEVEL_CONFIG].name} — {LEVEL_CONFIG[level as keyof typeof LEVEL_CONFIG].patternLength} botones
           </p>
         </div>
 
-        {/* Game status */}
+        {/* Game status }
         <div className="h-8 flex items-center justify-center gap-2">
           {gameState === "showing" && (
             <p className="text-accent animate-pulse-glow font-pixel text-xs">OBSERVA...</p>
@@ -308,14 +324,14 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
           )}
         </div>
 
-        {/* Streak indicator */}
+        {/* Streak indicator }
         {(gameState !== "idle") && (
           <div className="text-center text-sm text-foreground/60 tracking-wide">
             Racha: <span className={streak >= 0 ? "text-green-400" : "text-destructive"}>{streak > 0 ? `+${streak}` : streak}</span>
           </div>
         )}
 
-        {/* Game buttons */}
+        {/* Game buttons }
         <div className="flex flex-wrap justify-center gap-4 p-6 bg-card/50 rounded-3xl backdrop-blur-sm border border-border">
           {COLORS.map((color, index) => (
             <GameButton
@@ -328,7 +344,7 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
           ))}
         </div>
 
-        {/* Progress indicator */}
+        {/* Progress indicator }
         {gameState === "playing" && (
           <div className="flex gap-2">
             {pattern.map((_, index) => (
@@ -344,7 +360,7 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
           </div>
         )}
 
-        {/* Controls */}
+        {/* Controls }
         <div className="flex gap-4">
           {gameState === "idle" ? (
             <Button
@@ -381,7 +397,7 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
           </Button>
         </div>
 
-        {/* Instructions */}
+        {/* Instructions}
         {gameState === "idle" && (
           <div className="text-center max-w-sm space-y-2 mt-6">
             <p className="text-sm text-foreground/70 tracking-wide leading-relaxed">
@@ -397,5 +413,106 @@ export const PatternGame = ({ initialLevel = 1, onBack }: PatternGameProps) => {
         )}
       </div>
     </div>
-  );
+    */}
+<div className="min-h-screen bg-background flex items-center justify-center p-6">
+  <div className="bg-card/60 backdrop-blur-md border border-border rounded-3xl p-8 w-full max-w-lg text-center shadow-xl space-y-6">
+
+    <h1 className="text-4xl font-bold tracking-wider text-glow">
+      🧠 Juego de Memoria
+    </h1>
+
+    <p className="text-accent text-lg font-semibold animate-pulse">
+      🍀 Buena suerte
+      {gameState !== "idle" && (
+  <p className="text-sm text-muted-foreground animate-pulse">
+    ⏳ Observa el patrón en el protoboard físico...
+  </p>
+)}
+    </p>
+
+    {/* Score & Level */}
+    <div className="flex justify-around">
+      <div>
+        <p className="text-xs uppercase tracking-widest text-muted-foreground">Nivel</p>
+        <p className="text-3xl font-bold text-primary">{level}</p>
+      </div>
+      <div>
+        <p className="text-xs uppercase tracking-widest text-muted-foreground">Puntuación</p>
+        <p className="text-3xl font-bold text-accent">{score}</p>
+      </div>
+    </div>
+
+{/* Estadísticas */}
+<div className="grid grid-cols-2 gap-4 text-sm mt-4">
+  <div className="bg-muted/40 rounded-xl p-3">
+    <p className="text-xs uppercase text-muted-foreground">Racha</p>
+    <p className={`text-2xl font-bold ${streak >= 0 ? "text-green-400" : "text-red-400"}`}>
+      {streak}
+    </p>
+  </div>
+
+  <div className="bg-muted/40 rounded-xl p-3">
+    <p className="text-xs uppercase text-muted-foreground">Nivel actual</p>
+    <p className="text-2xl font-bold text-primary">{level}</p>
+  </div>
+
+  <div className="bg-muted/40 rounded-xl p-3">
+    <p className="text-xs uppercase text-muted-foreground">Aciertos actuales</p>
+    <p className="text-xl font-bold text-green-400">{currentHits}</p>
+  </div>
+
+  <div className="bg-muted/40 rounded-xl p-3">
+    <p className="text-xs uppercase text-muted-foreground">Errores actuales</p>
+    <p className="text-xl font-bold text-red-400">{currentErrors}</p>
+  </div>
+
+  <div className="bg-muted/40 rounded-xl p-3 col-span-2">
+    <p className="text-xs uppercase text-muted-foreground text-center">Totales</p>
+    <div className="flex justify-around mt-1">
+      <p className="text-green-400 font-bold">✔ {totalHits}</p>
+      <p className="text-red-400 font-bold">✖ {totalErrors}</p>
+    </div>
+  </div>
+</div>
+
+    {/* Rules */}
+    <div className="bg-muted/40 rounded-xl p-4 text-sm text-left space-y-1">
+      <p className="font-semibold text-center mb-2">📋 Reglas básicas</p>
+      <p>• Observa el patrón en el protoboard físico</p>
+      <p>• Repite la secuencia correctamente</p>
+      <p>• Cada acierto suma puntos</p>
+      <p>• El nivel se ajusta automáticamente</p>
+    </div>
+
+    {/* Buttons */}
+    <div className="flex gap-4 justify-center pt-2">
+     <Button
+  size="lg"
+  onClick={() => {
+    playSound(523.25); // sonido inicio (DO agudo)
+    startGame();
+  }}
+>
+  ▶ Jugar
+</Button>
+
+   <Button
+  size="lg"
+  variant="outline"
+  onClick={() => {
+    setCurrentHits(0);
+    setCurrentErrors(0);
+    setStreak(0);
+    onBack?.();
+  }}
+>
+  🔄 Seleccionar nivel
+</Button>
+
+    </div>
+  </div>
+</div>
+</>
+);
+
 };
