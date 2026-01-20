@@ -1,3 +1,4 @@
+
 # =========================
 # IMPORTS
 # =========================
@@ -16,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # =========================
 # CONFIG
 # =========================
-PORT = "COM7"
+PORT = "COM8"
 BAUD = 115200
 MODEL_PATH = "modelo_rf.pkl"
 
@@ -89,6 +90,9 @@ def enviar_patron_esp32(pattern):
     print("📤 Patrón enviado:", pattern)
 
 def procesar_boton(btn: int):
+    if game_state["start_time"] is None:
+        game_state["start_time"] = time.time()  # ⏱️ empieza ahora
+        
     if game_state["status"] != "playing":
         return
 
@@ -105,39 +109,9 @@ def procesar_boton(btn: int):
     if len(game_state["user_input"]) == len(game_state["pattern"]):
         game_state["status"] = "success"
         finalizar_ronda(True)
+    if game_state["status"] == "paused":
+        return
 
-def finalizar_ronda(success: bool):
-    elapsed = int(time.time() - game_state["start_time"])
-    aciertos = len(game_state["user_input"]) if success else len(game_state["user_input"]) - 1
-
-    racha = game_state["streak"]
-    if success:
-        racha = racha + 1 if racha >= 0 else 1
-    else:
-        racha = racha - 1 if racha <= 0 else -1
-
-    import pandas as pd
-
-    input_ml = pd.DataFrame([{
-        "Nivel": game_state["level"],
-        "Aciertos": aciertos,
-        "Errores": game_state["errors"],
-        "Tiempo_Reaccion": elapsed,
-        "Racha": racha
-    }])
-
-    accion = modelo.predict(input_ml)[0]
-
-
-    accion = modelo.predict(input_ml)[0]
-    print("🤖 ML decidió:", accion)
-
-    if accion == "SUBIR":
-        game_state["level"] = min(5, game_state["level"] + 1)
-    elif accion == "BAJAR":
-        game_state["level"] = max(1, game_state["level"] - 1)
-
-    game_state["streak"] = racha
 
 # =========================
 # THREAD PARA ESCUCHAR ESP32
@@ -149,12 +123,20 @@ def escuchar_serial():
             if line.startswith("BTN:"):
                 btn = int(line.split(":")[1])
                 procesar_boton(btn)
+        if game_state["status"] == "paused":
+            continue
+
         time.sleep(0.01)
 
 threading.Thread(target=escuchar_serial, daemon=True).start()
 
 def iniciar_nueva_ronda():
-    time.sleep(2)  # ⏳ pausa entre rondas
+    time.sleep(2)
+
+    # 👇 si está pausado, no hace nada
+    if game_state["status"] == "paused":
+        return
+
 
     game_state["pattern"] = generar_patron(game_state["level"])
     game_state["user_input"] = []
@@ -163,7 +145,6 @@ def iniciar_nueva_ronda():
     game_state["status"] = "playing"
 
     enviar_patron_esp32(game_state["pattern"])
-    print("🔁 Nueva ronda iniciada automáticamente")
 
 def finalizar_ronda(success: bool):
     elapsed = int(time.time() - game_state["start_time"])
@@ -227,3 +208,10 @@ def status():
 @app.get("/")
 def root():
     return {"status": "Backend integrado funcionando 🚀"}
+
+@app.post("/pause")
+def pause_game():
+    game_state["status"] = "paused"
+    return {"status": "paused"}
+
+

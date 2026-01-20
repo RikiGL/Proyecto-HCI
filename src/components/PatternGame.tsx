@@ -18,7 +18,8 @@ interface PatternGameProps {
   initialLevel?: number;
 }
 
-const API_URL = "http://localhost:8000";
+//const API_URL = "http://localhost:8000";
+const API_URL = "http://192.168.0.107:8000";
 
 const startGameBackend = async (level: number) => {
   const res = await fetch(`${API_URL}/start_game`, {
@@ -38,6 +39,9 @@ const startGameBackend = async (level: number) => {
 const getStatus = async () => {
   const res = await fetch(`${API_URL}/status`);
   return await res.json();
+};
+const pauseBackend = async () => {
+  await fetch(`${API_URL}/pause`, { method: "POST" });
 };
 
 
@@ -126,7 +130,14 @@ export const PatternGame = ({ initialLevel = 1 }: PatternGameProps) => {
           setCurrentHits(data.user_input.length);
 
           // Puntuación acumulada simple
-          setScore(data.streak * 10);
+          if (data.status === "success" && lastStatus.current !== "success") {
+            setScore((prev) => prev + 10);
+          }
+
+          if (data.status === "failed" && lastStatus.current !== "failed") {
+            setScore((prev) => Math.max(0, prev - 5));
+          }
+
 
           if (data.status !== lastStatus.current) {
             if (data.status === "success") {
@@ -161,7 +172,7 @@ export const PatternGame = ({ initialLevel = 1 }: PatternGameProps) => {
         <div className="bg-card/60 backdrop-blur-md border border-border rounded-3xl p-8 w-full max-w-lg text-center shadow-xl space-y-6">
 
           <h1 className="text-4xl font-bold tracking-wider text-glow">
-            🧠 Juego de Memoria
+            Memoria Patron
           </h1>
 
           <div>
@@ -225,7 +236,7 @@ export const PatternGame = ({ initialLevel = 1 }: PatternGameProps) => {
               </p>
             </div>
 
-            <div className="bg-muted/40 rounded-xl p-3 col-span-2">
+            {/*<div className="bg-muted/40 rounded-xl p-3 col-span-2">
               <p className="text-xs uppercase text-muted-foreground text-center">
                 Totales
               </p>
@@ -233,7 +244,7 @@ export const PatternGame = ({ initialLevel = 1 }: PatternGameProps) => {
                 <p className="text-green-400 font-bold">✔ {totalHits}</p>
                 <p className="text-red-400 font-bold">✖ {totalErrors}</p>
               </div>
-            </div>
+            </div>*/}
           </div>
 
           {/* Reglas */}
@@ -266,7 +277,10 @@ export const PatternGame = ({ initialLevel = 1 }: PatternGameProps) => {
             <Button
               size="lg"
               variant="secondary"
-              onClick={togglePause}
+              onClick={async () => {
+                await pauseBackend();
+                togglePause();
+              }}
               disabled={gameState === "idle"}
             >
               {gameState === "paused" ? "▶ Reanudar" : "⏸ Pausar"}
