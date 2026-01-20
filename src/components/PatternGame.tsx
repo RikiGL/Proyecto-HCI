@@ -1,320 +1,267 @@
+// --- igual imports ---
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
 
-/* =========================
-   TIPOS
-========================= */
-
 type GameState = "idle" | "playing" | "paused";
-
-/* =========================
-   PROPS
-========================= */
 
 interface PatternGameProps {
   initialLevel?: number;
 }
 
-//const API_URL = "http://localhost:8000";
 const API_URL = "http://192.168.0.107:8000";
 
+// ================= AUDIO =================
+const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+
+const unlockAudio = () => {
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+};
+
+const playTone = (freq: number, duration = 0.18) => {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+
+  osc.frequency.value = freq;
+  osc.type = "triangle";
+
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+
+  gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+};
+
+const successSound = () => {
+  playTone(700);
+  setTimeout(() => playTone(1000), 120);
+};
+
+const errorSound = () => {
+  playTone(250, 0.25);
+};
+
+// ================= BACKEND =================
 const startGameBackend = async (level: number) => {
-  const res = await fetch(`${API_URL}/start_game`, {
+  await fetch(`${API_URL}/start_game`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ level }),
   });
-
-  if (!res.ok) {
-    toast("❌ Error al iniciar juego");
-    return;
-  }
-
-  toast("🎮 Patrón enviado al ESP32");
 };
 
 const getStatus = async () => {
   const res = await fetch(`${API_URL}/status`);
   return await res.json();
 };
+
 const pauseBackend = async () => {
   await fetch(`${API_URL}/pause`, { method: "POST" });
 };
 
-
-/* =========================
-   COMPONENTE
-========================= */
-
+// ================= COMPONENT =================
 export const PatternGame = ({ initialLevel = 1 }: PatternGameProps) => {
   const navigate = useNavigate();
-
-  /* =========================
-     ESTADOS PRINCIPALES
-  ========================= */
 
   const [level, setLevel] = useState(initialLevel);
   const [gameState, setGameState] = useState<GameState>("idle");
   const [score, setScore] = useState(0);
-  const lastStatus = useRef<string | null>(null);
 
-  /* =========================
-     ESTADÍSTICAS
-  ========================= */
-
-  // Por ronda
   const [currentHits, setCurrentHits] = useState(0);
   const [currentErrors, setCurrentErrors] = useState(0);
-
-  // Totales
-  const [totalHits, setTotalHits] = useState(0);
-  const [totalErrors, setTotalErrors] = useState(0);
-
   const [streak, setStreak] = useState(0);
 
-  /* =========================
-     REFERENCIAS
-  ========================= */
+  const lastStatus = useRef<string | null>(null);
+  const prevLevel = useRef(level);
 
-  const roundStartTime = useRef<number>(0);
+  // Sonido cuando sube/baja nivel
+  useEffect(() => {
+    if (level > prevLevel.current) playTone(950);
+    if (level < prevLevel.current) playTone(300);
+    prevLevel.current = level;
+  }, [level]);
 
-  /* =========================
-     FUNCIONES
-  ========================= */
-
-  const startGame = () => {
-    setGameState("playing");
-    roundStartTime.current = Date.now();
-    toast("🎮 Juego iniciado");
-  };
-
-  const togglePause = () => {
-    setGameState((prev) => {
-      if (prev === "playing") {
-        toast("⏸ Juego en pausa");
-        return "paused";
-      }
-      if (prev === "paused") {
-        toast("▶ Juego reanudado");
-        return "playing";
-      }
-      return prev;
-    });
-  };
-
-  const playSound = (freq: number) => {
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    osc.frequency.value = freq;
-    osc.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.15);
-  };
-
+  // Polling
   useEffect(() => {
     let interval: any;
 
     if (gameState === "playing") {
       interval = setInterval(async () => {
-        try {
-          const data = await getStatus();
+        const data = await getStatus();
 
-          setLevel(data.level);
-          setCurrentErrors(data.errors);
-          setStreak(data.streak);
+        setLevel(data.level);
+        setCurrentErrors(data.errors);
+        setStreak(data.streak);
+        setCurrentHits(data.user_input.length);
 
-          // Aciertos actuales = cantidad de botones bien presionados
-          setCurrentHits(data.user_input.length);
-
-          // Puntuación acumulada simple
-          if (data.status === "success" && lastStatus.current !== "success") {
-            setScore((prev) => prev + 10);
+        if (data.status !== lastStatus.current) {
+          if (data.status === "success") {
+            setScore((s) => s + 10);
+            successSound();
+            toast({ title: "✅ Ronda completada" });
           }
 
-          if (data.status === "failed" && lastStatus.current !== "failed") {
-            setScore((prev) => Math.max(0, prev - 5));
+          if (data.status === "failed") {
+            setScore((s) => Math.max(0, s - 5));
+            errorSound();
+            toast({ title: "❌ Fallaste el patrón" });
           }
 
-
-          if (data.status !== lastStatus.current) {
-            if (data.status === "success") {
-              toast("✅ Ronda completada");
-            }
-
-            if (data.status === "failed") {
-              toast("❌ Fallaste el patrón");
-            }
-
-            lastStatus.current = data.status;
-          }
-
-
-        } catch (err) {
-          console.error("Error leyendo estado", err);
+          lastStatus.current = data.status;
         }
-      }, 500); // cada 500 ms
+      }, 500);
     }
 
     return () => clearInterval(interval);
   }, [gameState]);
 
-
-  /* =========================
-     UI
-  ========================= */
-
   return (
-    <>
-      <div className="min-h-screen bg-background flex items-center justify-center p-6">
-        <div className="bg-card/60 backdrop-blur-md border border-border rounded-3xl p-8 w-full max-w-lg text-center shadow-xl space-y-6">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden">
 
-          <h1 className="text-4xl font-bold tracking-wider text-glow">
-            Memoria Patron
+      {/* Background effects igual a Home */}
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/10 rounded-full blur-3xl" />
+
+      <div className="relative z-10 flex flex-col items-center gap-6 max-w-md w-full">
+
+        {/* Header */}
+        <div className="text-center space-y-2">
+          <h1 className="text-3xl md:text-4xl font-bold text-glow tracking-wider">
+            🧠 Memoria Patrón
           </h1>
+          <p className="text-sm text-foreground/70 tracking-wide leading-relaxed">
+            {gameState === "idle"
+              ? "Pulsa jugar para comenzar"
+              : "Observa el patrón físico"}
+          </p>
+          {/* Sección de ayuda / consejos (heurística Nielsen: ayuda y documentación) */}
+          <div className="w-full space-y-3 mt-2">
 
-          <div>
-            <p className="text-accent text-lg font-semibold animate-pulse">
-              🍀 Buena suerte
-            </p>
-
-            {gameState !== "idle" && (
-              <p className="text-sm text-muted-foreground animate-pulse">
-                ⏳ Observa el patrón en el protoboard físico...
-              </p>
-            )}
-          </div>
-
-          {/* Nivel y puntuación */}
-          <div className="flex justify-around">
-            <div>
-              <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                Nivel
-              </p>
-              <p className="text-3xl font-bold text-primary">{level}</p>
-            </div>
-
-            <div>
-              <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                Puntuación
-              </p>
-              <p className="text-3xl font-bold text-accent">{score}</p>
-            </div>
-          </div>
-
-          {/* Estadísticas */}
-          <div className="grid grid-cols-2 gap-4 text-sm mt-4">
-            <div className="bg-muted/40 rounded-xl p-3">
-              <p className="text-xs uppercase text-muted-foreground">Racha</p>
-              <p className="text-2xl font-bold text-green-400">{streak}</p>
-            </div>
-
-            <div className="bg-muted/40 rounded-xl p-3">
-              <p className="text-xs uppercase text-muted-foreground">
-                Nivel actual
-              </p>
-              <p className="text-2xl font-bold text-primary">{level}</p>
-            </div>
-
-            <div className="bg-muted/40 rounded-xl p-3">
-              <p className="text-xs uppercase text-muted-foreground">
-                Aciertos actuales
-              </p>
-              <p className="text-xl font-bold text-green-400">
-                {currentHits}
-              </p>
-            </div>
-
-            <div className="bg-muted/40 rounded-xl p-3">
-              <p className="text-xs uppercase text-muted-foreground">
-                Errores actuales
-              </p>
-              <p className="text-xl font-bold text-red-400">
-                {currentErrors}
-              </p>
-            </div>
-
-            {/*<div className="bg-muted/40 rounded-xl p-3 col-span-2">
-              <p className="text-xs uppercase text-muted-foreground text-center">
-                Totales
-              </p>
-              <div className="flex justify-around mt-1">
-                <p className="text-green-400 font-bold">✔ {totalHits}</p>
-                <p className="text-red-400 font-bold">✖ {totalErrors}</p>
+            {/* Consejo 1 */}
+            <div className="bg-card/50 border border-border rounded-lg p-4 backdrop-blur-sm">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                  🧠
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-semibold text-foreground tracking-wide">
+                    Memoriza antes de actuar
+                  </h3>
+                  <p className="text-xs text-foreground/60 leading-relaxed">
+                    Observa completamente la secuencia antes de presionar cualquier botón.
+                  </p>
+                </div>
               </div>
-            </div>*/}
+            </div>
+
+            {/* Consejo 2 */}
+            <div className="bg-card/50 border border-border rounded-lg p-4 backdrop-blur-sm">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-yellow-500/20 flex items-center justify-center flex-shrink-0">
+                  👀
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-semibold text-foreground tracking-wide">
+                    Observa el estado del juego
+                  </h3>
+                  <p className="text-xs text-foreground/60 leading-relaxed">
+                    Si fallas, el sistema te notificará y podrás intentarlo nuevamente.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Consejo 3 */}
+            <div className="bg-card/50 border border-border rounded-lg p-4 backdrop-blur-sm">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-destructive/20 flex items-center justify-center flex-shrink-0">
+                  ⚠️
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-semibold text-foreground tracking-wide">
+                    Evita presionar rápido
+                  </h3>
+                  <p className="text-xs text-foreground/60 leading-relaxed">
+                    Presionar demasiado rápido puede generar errores en la detección del patrón.
+                  </p>
+                </div>
+              </div>
+            </div>
+
           </div>
 
-          {/* Reglas */}
-          <div className="bg-muted/40 rounded-xl p-4 text-sm text-left space-y-1">
-            <p className="font-semibold text-center mb-2">
-              📋 Reglas básicas
-            </p>
-            <p>• Observa el patrón en el protoboard físico</p>
-            <p>• Repite la secuencia correctamente</p>
-            <p>• Cada acierto suma puntos</p>
-            <p>• El nivel se ajusta automáticamente</p>
+        </div>
+
+        {/* Stats principales */}
+        <div className="w-full grid grid-cols-2 gap-4">
+          <div className="bg-card/50 border border-border rounded-xl p-4 backdrop-blur-sm text-center">
+            <p className="text-xs text-foreground/60">Nivel</p>
+            <p className="text-2xl font-bold">{level}</p>
           </div>
-
-          {/* BOTONES */}
-          <div className="flex flex-wrap gap-4 justify-center pt-2">
-
-            {/* JUGAR */}
-            <Button
-              size="lg"
-              onClick={async () => {
-                playSound(523.25);
-                await startGameBackend(level);
-                startGame();
-              }}
-            >
-              ▶ Jugar
-            </Button>
-
-            {/* PAUSAR */}
-            <Button
-              size="lg"
-              variant="secondary"
-              onClick={async () => {
-                await pauseBackend();
-                togglePause();
-              }}
-              disabled={gameState === "idle"}
-            >
-              {gameState === "paused" ? "▶ Reanudar" : "⏸ Pausar"}
-            </Button>
-
-            {/* SELECCIONAR NIVEL */}
-            <Button
-              size="lg"
-              variant="outline"
-              onClick={() => {
-                setCurrentHits(0);
-                setCurrentErrors(0);
-                setStreak(0);
-                navigate("/levels");
-              }}
-            >
-              🔄 Seleccionar nivel
-            </Button>
-
-            {/* SALIR */}
-            <Button
-              size="lg"
-              variant="destructive"
-              onClick={() => {
-                toast("👋 Regresando al inicio");
-                navigate("/home");
-              }}
-            >
-              🚪 Salir
-            </Button>
-
+          <div className="bg-card/50 border border-border rounded-xl p-4 backdrop-blur-sm text-center">
+            <p className="text-xs text-foreground/60">Score</p>
+            <p className="text-2xl font-bold">{score}</p>
           </div>
         </div>
+
+        {/* Métricas */}
+        <div className="w-full grid grid-cols-3 gap-3">
+          <div className="bg-card/50 border border-border rounded-xl p-4 backdrop-blur-sm text-center text-sm">
+            Racha<br /><b>{streak}</b>
+          </div>
+          <div className="bg-card/50 border border-border rounded-xl p-4 backdrop-blur-sm text-center text-sm">
+            Aciertos<br /><b>{currentHits}</b>
+          </div>
+          <div className="bg-card/50 border border-border rounded-xl p-4 backdrop-blur-sm text-center text-sm">
+            Errores<br /><b>{currentErrors}</b>
+          </div>
+        </div>
+
+        {/* Botones */}
+        <div className="w-full grid grid-cols-2 gap-3 pt-2">
+          <Button
+            onClick={async () => {
+              unlockAudio();
+              playTone(600);
+              await startGameBackend(level);
+              setGameState("playing");
+            }}
+            className="h-11"
+          >
+            ▶ Jugar
+          </Button>
+
+          <Button
+            variant="secondary"
+            onClick={async () => {
+              unlockAudio();
+              playTone(450);
+              await pauseBackend();
+              setGameState((s) => (s === "playing" ? "paused" : "playing"));
+            }}
+            disabled={gameState === "idle"}
+            className="h-11"
+          >
+            {gameState === "paused" ? "▶ Reanudar" : "⏸ Pausar"}
+          </Button>
+
+          <Button variant="outline" onClick={() => navigate("/levels")}>
+            🎚 Nivel
+          </Button>
+
+          <Button variant="destructive" onClick={() => navigate("/home")}>
+            🚪 Salir
+          </Button>
+        </div>
       </div>
-    </>
+    </div>
   );
+
 };
