@@ -1,6 +1,7 @@
 # =========================
 # IMPORTS
 # =========================
+from turtle import pd
 import serial
 import threading
 import time
@@ -115,13 +116,18 @@ def finalizar_ronda(success: bool):
     else:
         racha = racha - 1 if racha <= 0 else -1
 
-    input_ml = [[
-        game_state["level"],
-        aciertos,
-        game_state["errors"],
-        elapsed,
-        racha
-    ]]
+    import pandas as pd
+
+    input_ml = pd.DataFrame([{
+        "Nivel": game_state["level"],
+        "Aciertos": aciertos,
+        "Errores": game_state["errors"],
+        "Tiempo_Reaccion": elapsed,
+        "Racha": racha
+    }])
+
+    accion = modelo.predict(input_ml)[0]
+
 
     accion = modelo.predict(input_ml)[0]
     print("🤖 ML decidió:", accion)
@@ -146,6 +152,52 @@ def escuchar_serial():
         time.sleep(0.01)
 
 threading.Thread(target=escuchar_serial, daemon=True).start()
+
+def iniciar_nueva_ronda():
+    time.sleep(2)  # ⏳ pausa entre rondas
+
+    game_state["pattern"] = generar_patron(game_state["level"])
+    game_state["user_input"] = []
+    game_state["errors"] = 0
+    game_state["start_time"] = time.time()
+    game_state["status"] = "playing"
+
+    enviar_patron_esp32(game_state["pattern"])
+    print("🔁 Nueva ronda iniciada automáticamente")
+
+def finalizar_ronda(success: bool):
+    elapsed = int(time.time() - game_state["start_time"])
+    aciertos = len(game_state["user_input"]) if success else max(0, len(game_state["user_input"]) - 1)
+
+    racha = game_state["streak"]
+    if success:
+        racha = racha + 1 if racha >= 0 else 1
+    else:
+        racha = racha - 1 if racha <= 0 else -1
+
+    import pandas as pd
+
+    input_ml = pd.DataFrame([{
+        "Nivel": game_state["level"],
+        "Aciertos": aciertos,
+        "Errores": game_state["errors"],
+        "Tiempo_Reaccion": elapsed,
+        "Racha": racha
+    }])
+
+    accion = modelo.predict(input_ml)[0]
+    print("🤖 ML decidió:", accion)
+
+    if accion == "SUBIR":
+        game_state["level"] = min(5, game_state["level"] + 1)
+    elif accion == "BAJAR":
+        game_state["level"] = max(1, game_state["level"] - 1)
+
+    game_state["streak"] = racha
+
+    # 🔁 siguiente ronda automática
+    threading.Thread(target=iniciar_nueva_ronda, daemon=True).start()
+
 
 # =========================
 # ENDPOINTS

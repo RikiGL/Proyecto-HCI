@@ -18,6 +18,29 @@ interface PatternGameProps {
   initialLevel?: number;
 }
 
+const API_URL = "http://localhost:8000";
+
+const startGameBackend = async (level: number) => {
+  const res = await fetch(`${API_URL}/start_game`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ level }),
+  });
+
+  if (!res.ok) {
+    toast("❌ Error al iniciar juego");
+    return;
+  }
+
+  toast("🎮 Patrón enviado al ESP32");
+};
+
+const getStatus = async () => {
+  const res = await fetch(`${API_URL}/status`);
+  return await res.json();
+};
+
+
 /* =========================
    COMPONENTE
 ========================= */
@@ -32,6 +55,7 @@ export const PatternGame = ({ initialLevel = 1 }: PatternGameProps) => {
   const [level, setLevel] = useState(initialLevel);
   const [gameState, setGameState] = useState<GameState>("idle");
   const [score, setScore] = useState(0);
+  const lastStatus = useRef<string | null>(null);
 
   /* =========================
      ESTADÍSTICAS
@@ -85,6 +109,47 @@ export const PatternGame = ({ initialLevel = 1 }: PatternGameProps) => {
     osc.start();
     osc.stop(ctx.currentTime + 0.15);
   };
+
+  useEffect(() => {
+    let interval: any;
+
+    if (gameState === "playing") {
+      interval = setInterval(async () => {
+        try {
+          const data = await getStatus();
+
+          setLevel(data.level);
+          setCurrentErrors(data.errors);
+          setStreak(data.streak);
+
+          // Aciertos actuales = cantidad de botones bien presionados
+          setCurrentHits(data.user_input.length);
+
+          // Puntuación acumulada simple
+          setScore(data.streak * 10);
+
+          if (data.status !== lastStatus.current) {
+            if (data.status === "success") {
+              toast("✅ Ronda completada");
+            }
+
+            if (data.status === "failed") {
+              toast("❌ Fallaste el patrón");
+            }
+
+            lastStatus.current = data.status;
+          }
+
+
+        } catch (err) {
+          console.error("Error leyendo estado", err);
+        }
+      }, 500); // cada 500 ms
+    }
+
+    return () => clearInterval(interval);
+  }, [gameState]);
+
 
   /* =========================
      UI
@@ -188,8 +253,9 @@ export const PatternGame = ({ initialLevel = 1 }: PatternGameProps) => {
             {/* JUGAR */}
             <Button
               size="lg"
-              onClick={() => {
+              onClick={async () => {
                 playSound(523.25);
+                await startGameBackend(level);
                 startGame();
               }}
             >
