@@ -1,37 +1,48 @@
-// src/hooks/useGameEngine.ts
-import { useState, useRef, useEffect, useCallback } from "react"; import { toast } from "@/components/ui/use-toast";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { toast } from "@/components/ui/use-toast";
 import { startCountdown, CancelFn } from "@/lib/utils";
-import { gameApi } from "@/services/api"; // Importamos el servicio
-import { playTone, successSound, errorSound, unlockAudio } from "@/services/audio"; // Importamos audio
-import { playAlarm } from "@/services/audio"; // Importamos la alarma
+import { gameApi } from "@/services/api";
+import { playTone, successSound, errorSound, unlockAudio, playAlarm } from "@/services/audio";
+
 export type GameState = "idle" | "playing" | "paused";
-const ROUND_DURATION = 10;
+
+// Duración del turno del usuario (para responder)
+const USER_TURN_DURATION = 10; 
+// Duración para memorizar (mientras el patrón se muestra)
+const MEMORIZE_DURATION = 5000; 
+
 export const useGameEngine = (initialLevel: number = 1) => {
     /* ---------- State ---------- */
     const [gameState, setGameState] = useState<GameState>("idle");
     const [level, setLevel] = useState(initialLevel);
     const [score, setScore] = useState(0);
+    
+    // Timer
     const [isTimerActive, setIsTimerActive] = useState(false);
     const [timerResetKey, setTimerResetKey] = useState(0);
-    // Estadísticas
+
+    // Stats
     const [currentHits, setCurrentHits] = useState(0);
     const [currentErrors, setCurrentErrors] = useState(0);
     const [streak, setStreak] = useState(0);
     const [totalHits, setTotalHits] = useState(0);
     const [totalErrors, setTotalErrors] = useState(0);
 
-    // Mensajes UI
+    // UI Messages
     const [overlayMessage, setOverlayMessage] = useState<string | null>(null);
-    const [prepMessage, setPrepMessage] = useState<string | null>(null);
-    const [countdown, setCountdown] = useState<number | null>(null);
+    const [prepMessage, setPrepMessage] = useState<string | null>(null); // "Memoriza", "Tu turno"
+    const [countdown, setCountdown] = useState<number | null>(null); // 3, 2, 1 inicial
     const [resultMessage, setResultMessage] = useState<string | null>(null);
 
     /* ---------- Refs ---------- */
     const prevHits = useRef(0);
     const prevErrors = useRef(0);
     const prevLevel = useRef(level);
+    const prevBackendStatus = useRef<string>("idle"); // Para detectar cambios de ciclo
+    
     const cancelRef = useRef<CancelFn | null>(null);
     const roundStart = useRef(0);
+    const flowTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     /* ---------- Helpers ---------- */
     const showOverlay = (msg: string, duration = 2000) => {
@@ -40,7 +51,8 @@ export const useGameEngine = (initialLevel: number = 1) => {
     };
 
     const hardReset = () => {
-        gameApi.reset(); // Reseteamos backend también
+        gameApi.reset();
+        if (flowTimeoutRef.current) clearTimeout(flowTimeoutRef.current);
         setGameState("idle");
         setLevel(initialLevel);
         setScore(0);
@@ -52,10 +64,12 @@ export const useGameEngine = (initialLevel: number = 1) => {
         setPrepMessage(null);
         setCountdown(null);
         setResultMessage(null);
+        setIsTimerActive(false);
 
         prevHits.current = 0;
         prevErrors.current = 0;
         prevLevel.current = initialLevel;
+        prevBackendStatus.current = "idle";
     };
 
     const waitCountdown = (from: number, onTick: (v: number) => void) =>
@@ -67,148 +81,146 @@ export const useGameEngine = (initialLevel: number = 1) => {
             });
         });
 
-    /* ---------- Effects (Level Feedback) ---------- */
-    useEffect(() => {
-        if (level > prevLevel.current) {
-            playTone(950);
-            showOverlay(`🚀 Subiste a nivel ${level}`);
-        }
-        if (level < prevLevel.current) {
-            playTone(300);
-            showOverlay(`💪 Puedes recuperar el nivel ${level}`);
-        }
-        prevLevel.current = level;
-    }, [level]);
+    /* ---------- CICLO VISUAL DE LA RONDA ---------- */
+    // Esta función maneja SOLO la parte visual: "Memoriza" -> Espera -> "Tu turno"
+    const startRoundFlow = useCallback(() => {
+        // 1. Fase de Memorización
+        setIsTimerActive(false); // Timer apagado
+        setPrepMessage("👀 ¡Memoriza el patrón!");
+        
+        // Limpiamos cualquier timeout anterior
+        if (flowTimeoutRef.current) clearTimeout(flowTimeoutRef.current);
 
-    /* ---------- Effects (Score Feedback) ---------- */
-    useEffect(() => {
-        if (score === 50) showOverlay("🎉 Llegaste a 50 puntos");
-        if (score === 100) showOverlay("🏆 ¡100 puntos!");
-    }, [score]);
+        // 2. Esperar X segundos (mientras el hardware muestra las luces)
+        flowTimeoutRef.current = setTimeout(() => {
+            // 3. Fase de Tu Turno
+            playTone(800, 0.1); // Sonido "Ding" de inicio
+            setPrepMessage("⚡ ¡Tu turno!");
+            setTimerResetKey(k => k + 1); // Reset barra
+            setIsTimerActive(true); // 🔥 ACTIVAR BARRA DESCENDENTE
+            roundStart.current = Date.now(); // Marcar inicio para estadísticas
+        }, MEMORIZE_DURATION);
 
-    /* ---------- Effects (Polling) ---------- */
+    }, []);
+
+    /* ---------- POLLING (Sincronización con Backend) ---------- */
     useEffect(() => {
         if (gameState !== "playing") return;
 
         const interval = setInterval(async () => {
             try {
-                const data = await gameApi.getStatus();
+                const data = await gameApi.getStatus(); // { status, user_input, level, ... }
+                
                 const hits = data.user_input?.length ?? 0;
                 const errors = data.errors ?? 0;
+                const backendStatus = data.status;
 
+                // Actualizar datos básicos
                 setLevel(data.level);
                 setStreak(data.streak);
                 setCurrentHits(hits);
                 setCurrentErrors(errors);
 
+                // --- DETECCIÓN DE CAMBIO DE CICLO ---
+                // Si el backend pasó de 'success' (o 'idle') a 'playing', significa que empezó una nueva ronda
+                if (prevBackendStatus.current === "success" && backendStatus === "playing") {
+                    // ¡Ciclo nuevo detectado!
+                    startRoundFlow(); 
+                }
+
+                // Si el backend reporta éxito (ronda terminada)
+                if (backendStatus === "success" && prevBackendStatus.current !== "success") {
+                     setIsTimerActive(false); // Parar barra inmediatamente (se llena o detiene)
+                     successSound();
+                     setPrepMessage("✅ ¡Correcto!");
+                     showOverlay("🌟 Atento al siguiente patrón...", 2500);
+                     // No llamamos a startRoundFlow aquí, esperamos a que el backend cambie a 'playing' de nuevo
+                }
+
+                // Si el backend reporta fallo
+                if (backendStatus === "failed" && prevBackendStatus.current !== "failed") {
+                    setIsTimerActive(false);
+                    errorSound();
+                    showOverlay("❌ Error en el patrón", 2000);
+                }
+
+                // Cálculo de Puntos (Feedback inmediato)
                 const deltaHits = hits - prevHits.current;
                 const deltaErrors = errors - prevErrors.current;
 
-                if (deltaHits > 0) {
+                if (deltaHits > 0 && backendStatus === "playing") {
                     setScore((s) => s + deltaHits * 10);
-                    successSound();
+                    playTone(600 + (hits * 50), 0.1); // Sonido ascendente por cada acierto
                 }
-                if (deltaErrors > 0) {
-                    setScore((s) => Math.max(0, s - deltaErrors * 5));
-                    errorSound();
-                }
-
-                setTotalHits((t) => t + Math.max(0, deltaHits));
-                setTotalErrors((t) => t + Math.max(0, deltaErrors));
-
+                
+                // Actualizar Refs
                 prevHits.current = hits;
                 prevErrors.current = errors;
+                prevLevel.current = data.level;
+                prevBackendStatus.current = backendStatus;
+
             } catch {
-                console.warn("Backend no responde");
+                console.warn("Backend sync error");
             }
-        }, 500);
+        }, 300); // Polling un poco más rápido para mejor respuesta
 
         return () => clearInterval(interval);
-    }, [gameState]);
+    }, [gameState, startRoundFlow]);
 
-    /* ---------- Main Flow Function ---------- */
+
+    /* ---------- INICIO DEL JUEGO (Botón Jugar) ---------- */
     const handlePlaySequence = async () => {
         unlockAudio();
         playTone(523.25);
+        
         setGameState("playing");
         setResultMessage(null);
-        setIsTimerActive(false); // Timer apagado mientras memoriza
-        // Preparación
+        setIsTimerActive(false); 
+        prevBackendStatus.current = "idle"; // Reset status tracker
+
+        // 1. Cuenta regresiva 3, 2, 1
         setPrepMessage("Preparando...");
         await waitCountdown(3, setCountdown);
         setCountdown(null);
 
-        await gameApi.startGame(level);
-        roundStart.current = Date.now();
-        toast({ title: "🎮 Juego iniciado" }); // Ajuste para shadcn toast standard
-        await gameApi.startGame(level);
-        // Memorizar
-        setPrepMessage("Memoriza el patrón");
-        await waitCountdown(5, () => { });
-
-        // Repetir
-        setPrepMessage("¡Repite el patrón!");
-        setTimerResetKey(prev => prev + 1); // Reinicia la barra visual al 100%
-        setIsTimerActive(true);
-
-        // Predicción
-        setResultMessage("Pendiente...");
+        // 2. Llamada a Backend (SOLO UNA VEZ)
+        // Esto hace que el hardware muestre las luces inmediatamente
         try {
-            const res = await gameApi.predict({
-                nivel: level,
-                aciertos: totalHits,
-                errores: totalErrors,
-                tiempo: (Date.now() - roundStart.current) / 1000,
-                racha: streak,
-            });
-
-            const data = await res.json();
-            setResultMessage(data?.accion ?? "Resultado recibido");
-        } catch {
-            setResultMessage("Pendiente");
+            await gameApi.startGame(level);
+            toast({ title: "🎮 Juego iniciado" });
+            
+            // 3. Iniciar el flujo visual (Memoriza -> Tu Turno)
+            startRoundFlow();
+        } catch (e) {
+            console.error("Error iniciando juego", e);
+            setGameState("idle");
         }
     };
-    /* =========================
-     Manejador de Fin de Tiempo
-  ========================= */
+
+    /* ---------- TIMEOUT (Fin de la barra) ---------- */
     const handleTimeUp = useCallback(async () => {
         if (gameState !== "playing") return;
-
-        // 1. Sonido y UI
+        
+        // El usuario no respondió a tiempo
         playAlarm();
         showOverlay("⏰ ¡Tiempo Agotado!", 1500);
-        setIsTimerActive(false); // Detener barra
+        setIsTimerActive(false);
+        setPrepMessage("⏳ Tiempo fuera...");
 
-        // 2. Penalización (Opcional, si quieres bajar puntos por lentitud)
-        setScore(s => Math.max(0, s - 5));
-
-        // 3. Reiniciar Ronda (Llamada al Backend como pediste)
-        // Usamos start_game con el nivel actual para generar nuevo patrón
+        // Forzamos reinicio de ronda en backend para mantener el ciclo
+        // (Aunque lo ideal sería mandar un 'fail' al backend, start_game reinicia el estado)
         try {
-            console.log("Reiniciando ronda por timeout...");
-            await gameApi.startGame(level);
-
-            // Reiniciamos timestamp de inicio para que el backend mida bien el tiempo de la nueva ronda
-            roundStart.current = Date.now();
-
-            // Opcional: Dar un respiro antes de reactivar el timer
-            setTimeout(() => {
-                setTimerResetKey(prev => prev + 1);
-                setIsTimerActive(true);
-            }, 2000); // 2 segundos para ver el nuevo patrón (ajusta según tu UX)
-
+            setTimeout(async () => {
+                await gameApi.startGame(level);
+                // Al llamar startGame, el backend pasará a playing, nuestro polling lo detectará
+                // o forzamos el flujo visual:
+                startRoundFlow(); 
+            }, 2000);
         } catch (e) {
-            console.error("Error reiniciando ronda", e);
+            console.error(e);
         }
-    }, [gameState, level]);
-    useEffect(() => {
-        // Si detectamos que los hits completaron el patrón (usando tu lógica de polling)
-        // Podrías necesitar saber el largo del patrón actual para esto con precisión
-        // O simplemente, cuando el backend cambie de nivel o mande status success:
-        if (currentHits > 0 && currentHits === prevLevel.current /* lógica aprox */) {
-            setIsTimerActive(false);
-        }
-    }, [currentHits]);
+    }, [gameState, level, startRoundFlow]);
+
     return {
         gameState,
         setGameState,
@@ -219,7 +231,7 @@ export const useGameEngine = (initialLevel: number = 1) => {
         actions: { handlePlaySequence, hardReset },
         timer: {
             isActive: isTimerActive,
-            duration: ROUND_DURATION,
+            duration: USER_TURN_DURATION,
             onTimeUp: handleTimeUp,
             resetKey: timerResetKey
         }
