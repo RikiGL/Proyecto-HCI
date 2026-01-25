@@ -11,7 +11,7 @@ interface PatternGameProps {
   initialLevel?: number;
 }
 
-const API_URL = "http://192.168.0.107:8000";
+const API_URL = "http://192.168.0.108:8000";
 
 // ================= AUDIO =================
 const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
