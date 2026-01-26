@@ -9,7 +9,7 @@ export const gameApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ level }),
     }),
-
+  startTurn: () => fetch(`${API_URL}/start_turn`, { method: "POST" }),
   getStatus: async () => (await fetch(`${API_URL}/status`)).json(),
 
   pause: () => fetch(`${API_URL}/pause`, { method: "POST" }),
